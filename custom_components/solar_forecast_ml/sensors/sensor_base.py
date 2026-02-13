@@ -314,6 +314,7 @@ class NextHourSensor(SensorEntity):
         """Load next hour forecast from coordinator cache. @zara"""
         try:
             from homeassistant.util import dt as dt_util
+            from datetime import datetime, timedelta
 
             hourly_data = getattr(self._coordinator, CACHE_HOURLY_PREDICTIONS, None)
             if not hourly_data or not isinstance(hourly_data, dict):
@@ -328,25 +329,48 @@ class NextHourSensor(SensorEntity):
                 return
 
             now_local = dt_util.now()
-            today = now_local.date().isoformat()
-            current_hour = now_local.hour
+            cutoff_time = now_local + timedelta(hours=48)
 
-            upcoming_predictions = [
-                pred
-                for pred in predictions
-                if pred.get(PRED_TARGET_DATE) == today and pred.get(PRED_TARGET_HOUR, -1) > current_hour
-            ]
+            # Filter predictions for next 48 hours @zara
+            upcoming_predictions = []
+            for pred in predictions:
+                pred_date_str = pred.get(PRED_TARGET_DATE)
+                pred_hour = pred.get(PRED_TARGET_HOUR, 0)
 
-            upcoming_predictions.sort(key=lambda p: p.get(PRED_TARGET_HOUR, 0))
+                if not pred_date_str:
+                    continue
 
+                # Parse prediction datetime @zara
+                try:
+                    pred_date = datetime.fromisoformat(pred_date_str).date()
+                    pred_dt = datetime.combine(pred_date, datetime.min.time()).replace(
+                        hour=pred_hour, tzinfo=now_local.tzinfo
+                    )
+                except (ValueError, AttributeError):
+                    continue
+
+                # Include if it's after now and within 48 hours @zara
+                if pred_dt > now_local and pred_dt <= cutoff_time:
+                    upcoming_predictions.append(pred)
+
+            # Sort by date then hour @zara
+            upcoming_predictions.sort(key=lambda p: (
+                p.get(PRED_TARGET_DATE, ""),
+                p.get(PRED_TARGET_HOUR, 0)
+            ))
+
+            # Build upcoming hours list with enhanced information @zara
             self._upcoming_hours = [
                 {
+                    "date": pred.get(PRED_TARGET_DATE),
                     "time": f"{pred.get(PRED_TARGET_HOUR, 0):02d}:00",
+                    "datetime": f"{pred.get(PRED_TARGET_DATE)} {pred.get(PRED_TARGET_HOUR, 0):02d}:00",
                     "kwh": pred.get(PRED_PREDICTION_KWH, 0.0),
                 }
                 for pred in upcoming_predictions
             ]
 
+            # Set next hour value @zara
             if upcoming_predictions:
                 self._cached_value = upcoming_predictions[0].get(PRED_PREDICTION_KWH, 0.0)
             else:

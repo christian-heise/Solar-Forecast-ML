@@ -503,14 +503,22 @@ class SolarForecastMLCoordinator(DataUpdateCoordinator):
 
             # Load hourly predictions and best hour from database @zara
             try:
-                today_str = dt_util.now().date().isoformat()
-                predictions = await self.data_manager.get_hourly_predictions(today_str)
+                now = dt_util.now()
+                today = now.date()
+
+                # Fetch predictions for next 3 days (72 hours) @zara
+                all_predictions = []
+                for i in range(3):
+                    date_str = (today + timedelta(days=i)).isoformat()
+                    predictions = await self.data_manager.get_hourly_predictions(date_str)
+                    if predictions:
+                        all_predictions.extend(predictions)
 
                 # Load best hour from database @zara
                 best_hour_data = await self.data_manager.get_forecast_best_hour()
 
                 self._hourly_predictions_cache = {
-                    "predictions": predictions if predictions else [],
+                    "predictions": all_predictions,
                     "best_hour_today": {
                         "hour": best_hour_data.get("best_hour") if best_hour_data else None,
                         "kwh": best_hour_data.get("best_hour_kwh") if best_hour_data else None,
@@ -914,19 +922,28 @@ class SolarForecastMLCoordinator(DataUpdateCoordinator):
     async def _refresh_hourly_predictions_cache(self) -> None:
         """Refresh hourly predictions cache from database. @zara"""
         try:
-            today_str = dt_util.now().date().isoformat()
-            predictions = await self.data_manager.get_hourly_predictions(today_str)
+            now = dt_util.now()
+            today = now.date()
+
+            # Fetch predictions for next 3 days (72 hours) @zara
+            all_predictions = []
+            for i in range(3):
+                date_str = (today + timedelta(days=i)).isoformat()
+                predictions = await self.data_manager.get_hourly_predictions(date_str)
+                if predictions:
+                    all_predictions.extend(predictions)
+
             best_hour_data = await self.data_manager.get_forecast_best_hour()
 
             self._hourly_predictions_cache = {
-                "predictions": predictions if predictions else [],
+                "predictions": all_predictions,
                 "best_hour_today": {
                     "hour": best_hour_data.get("best_hour") if best_hour_data else None,
                     "kwh": best_hour_data.get("best_hour_kwh") if best_hour_data else None,
                     "method": best_hour_data.get("method") if best_hour_data else None,
                 } if best_hour_data else {},
             }
-            _LOGGER.debug("Hourly predictions cache refreshed: %d predictions", len(predictions) if predictions else 0)
+            _LOGGER.debug("Hourly predictions cache refreshed: %d predictions", len(all_predictions))
         except Exception as e:
             _LOGGER.warning(f"Could not refresh hourly predictions cache: {e}")
 
